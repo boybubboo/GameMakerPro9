@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { DefaultInventoryItems } from '../data/registries';
 import type { CreatureBodyId, LevelEntity, PickupMeshKind, PropPresetId } from '../types/maker';
 import { getTerrainTextureAtlas } from './proceduralTextures';
-import { createBuiltinMechanismModel } from './mechanismController';
+import { attachChestGoldenGlow, createBuiltinMechanismModel } from './mechanismController';
 import {
   createDetailedPineTierGeometry,
   createFlutedStumpGeometry,
@@ -2185,6 +2185,9 @@ export function buildEntityMesh(entity: LevelEntity): THREE.Group {
     const mechModel = createBuiltinMechanismModel(entity.mechTemplate);
     group.add(mechModel);
     group.userData.mechRoot = mechModel;
+    if (mechModel.userData.chestAnim) {
+      group.userData.chestAnim = mechModel.userData.chestAnim;
+    }
     group.scale.setScalar(entity.scale);
     group.rotation.y = (entity.rotation * Math.PI) / 180;
     return group;
@@ -2394,24 +2397,66 @@ export function buildEntityMesh(entity: LevelEntity): THREE.Group {
     }
 
     case 'treasure': {
-      addShadow(0.55);
-      const woodMat = new THREE.MeshStandardMaterial({ color: '#9C5E2D', roughness: 0.7 });
-      const goldMat = new THREE.MeshStandardMaterial({ color: '#F2C230', roughness: 0.28, metalness: 0.88 });
-      const base = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.44, 0.62), woodMat);
+      addShadow(0.58);
+      const woodMat = new THREE.MeshStandardMaterial({ color: '#8E5225', roughness: 0.72 });
+      const darkWoodMat = new THREE.MeshStandardMaterial({ color: '#3D2210', roughness: 0.88 });
+      const goldMat = new THREE.MeshStandardMaterial({ color: '#F2C230', roughness: 0.25, metalness: 0.9 });
+
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.44, 0.64), woodMat);
       base.position.y = 0.22;
       base.castShadow = true;
-      const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.86, 12, 1, false, 0, Math.PI), woodMat);
-      lid.rotation.z = Math.PI / 2;
-      lid.rotation.y = Math.PI / 2;
-      lid.position.y = 0.44;
-      lid.castShadow = true;
-      const strapL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.48, 0.65), goldMat);
-      strapL.position.set(-0.28, 0.25, 0);
-      const strapR = strapL.clone();
-      strapR.position.x = 0.28;
-      const lock = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.08), goldMat);
-      lock.position.set(0, 0.4, 0.33);
-      group.add(base, lid, strapL, strapR, lock);
+      base.receiveShadow = true;
+
+      // Recessed dark interior floor/cavity so opened chest reveals radiant gold light cleanly
+      const cavity = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.08, 0.52), darkWoodMat);
+      cavity.position.y = 0.415;
+
+      // Lower side metal straps & lock plate
+      for (const sx of [-0.29, 0.29]) {
+        const baseStrap = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.67), goldMat);
+        baseStrap.position.set(sx, 0.225, 0);
+        baseStrap.castShadow = true;
+        group.add(baseStrap);
+      }
+      const lockPlate = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.16, 0.07), goldMat);
+      lockPlate.position.set(0, 0.35, 0.33);
+
+      // Back-hinged lid pivot at (0, 0.44, -0.32)
+      const lidPivot = new THREE.Group();
+      lidPivot.name = 'Chest_Lid';
+      lidPivot.position.set(0, 0.44, -0.32);
+
+      const lidRim = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.66), woodMat);
+      lidRim.position.set(0, 0.04, 0.32);
+      lidRim.castShadow = true;
+
+      const lidDome = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.32, 0.32, 0.88, 14, 1, false, 0, Math.PI),
+        woodMat
+      );
+      lidDome.rotation.z = Math.PI / 2;
+      lidDome.rotation.y = Math.PI / 2;
+      lidDome.position.set(0, 0.06, 0.32);
+      lidDome.castShadow = true;
+
+      for (const sx of [-0.29, 0.29]) {
+        const lidStrap = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.335, 0.335, 0.082, 14, 1, false, 0, Math.PI),
+          goldMat
+        );
+        lidStrap.rotation.z = Math.PI / 2;
+        lidStrap.rotation.y = Math.PI / 2;
+        lidStrap.position.set(sx, 0.06, 0.32);
+        lidPivot.add(lidStrap);
+      }
+
+      const topClasp = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.07), goldMat);
+      topClasp.position.set(0, 0.01, 0.65);
+
+      lidPivot.add(lidRim, lidDome, topClasp);
+      group.add(base, cavity, lockPlate, lidPivot);
+
+      attachChestGoldenGlow(group, 0.72, 0.48, 0.46, lidPivot, false);
       break;
     }
 

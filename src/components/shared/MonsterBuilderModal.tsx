@@ -31,6 +31,7 @@ import type {
   MonsterHeadStyle,
   MonsterHornStyle,
   MonsterLegPairConfig,
+  MonsterNoseStyle,
   MonsterPartKey,
   MonsterPawStyle,
   MonsterRole,
@@ -100,6 +101,7 @@ const BODY_PART_GROUPS: {
       { key: 'neck', label: 'Neck(s) & Spread' },
       { key: 'head', label: 'Head, Cranium & Jaw' },
       { key: 'muzzle', label: 'Snout & Muzzle' },
+      { key: 'nose', label: 'Nose & Nostrils' },
       { key: 'mouth', label: 'Mouth & Expressions' },
       { key: 'teeth', label: 'Teeth & Fangs' },
       { key: 'eyes', label: 'Eyes & Eyelids' },
@@ -213,6 +215,15 @@ const TEETH_OPTIONS: { id: MonsterTeethStyle; label: string }[] = [
   { id: 'canine', label: 'Fangs' },
   { id: 'stripsAndCanine', label: 'Strips + Fangs' },
   { id: 'buck', label: 'Buck Teeth' },
+];
+
+const NOSE_OPTIONS: { id: MonsterNoseStyle; label: string }[] = [
+  { id: 'round', label: 'Round Button' },
+  { id: 'oval', label: 'Oval Pad' },
+  { id: 'triangle', label: 'Soft Triangle' },
+  { id: 'snoutPad', label: 'Pig / Snout Pad' },
+  { id: 'nostrilsOnly', label: 'Nostrils Only' },
+  { id: 'none', label: 'None' },
 ];
 
 const COAT_OPTIONS: { id: CharacterSurfaceCoatMode; label: string }[] = [
@@ -1225,15 +1236,13 @@ export const MonsterBuilderModal: React.FC<MonsterBuilderModalProps> = ({
                   className="w-4 h-4 accent-[#7C5CFF]"
                 />
               </label>
-              <label className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] px-3 py-2 cursor-pointer">
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Nostrils</span>
-                <input
-                  type="checkbox"
-                  checked={bp.muzzle.nostrils}
-                  onChange={(e) => patchBp({ muzzle: { ...bp.muzzle, nostrils: e.target.checked } }, true)}
-                  className="w-4 h-4 accent-[#7C5CFF]"
-                />
-              </label>
+              <button
+                type="button"
+                onClick={() => setActivePart('nose')}
+                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] hover:border-[#7C5CFF]/50 text-[11px] font-semibold text-[#7C5CFF] whitespace-nowrap"
+              >
+                Edit Nose &rarr;
+              </button>
             </div>
             {bp.muzzle.enabled && (
               <>
@@ -1320,6 +1329,79 @@ export const MonsterBuilderModal: React.FC<MonsterBuilderModalProps> = ({
               <ColorField label="Sclera Color" value={bp.eyes.scleraColor} onChange={(c) => patchBp({ eyes: { ...bp.eyes, scleraColor: c } })} />
               <ColorField label="Pupil Color" value={bp.eyes.pupilColor} onChange={(c) => patchBp({ eyes: { ...bp.eyes, pupilColor: c } })} />
             </div>
+          </div>
+        );
+      case 'nose':
+        return (
+          <div className="space-y-3">
+            <label className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] px-3 py-2 cursor-pointer">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                Enable Nose &amp; Nostrils
+              </span>
+              <input
+                type="checkbox"
+                checked={bp.nose.enabled}
+                onChange={(e) => patchBp({ nose: { ...bp.nose, enabled: e.target.checked } }, true)}
+                className="w-4 h-4 accent-[#7C5CFF]"
+              />
+            </label>
+            {bp.nose.enabled && (
+              <>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {NOSE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => patchBp({ nose: { ...bp.nose, style: opt.id } }, true)}
+                      className={`px-2 py-1.5 rounded-lg text-[11px] font-medium border whitespace-nowrap ${
+                        bp.nose.style === opt.id
+                          ? 'bg-[#7C5CFF] border-[#7C5CFF] text-white'
+                          : 'bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {bp.nose.style !== 'none' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                      <SliderRow label="Width" value={bp.nose.width} min={0.012} max={0.11} step={0.002} unit="m" decimals={3} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, width: v } })} />
+                      <SliderRow label="Height" value={bp.nose.height} min={0.01} max={0.09} step={0.002} unit="m" decimals={3} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, height: v } })} />
+                      <SliderRow label="Flat to 3D" value={bp.nose.depth3D} min={0.05} max={1.3} step={0.05} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, depth3D: v } })} />
+                      <SliderRow label="Nose Shine" value={bp.nose.shine} min={0} max={1} step={0.05} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, shine: v } })} />
+                      <SliderRow label="Snout Fwd/Back" value={bp.nose.posZ} min={-0.18} max={0.12} step={0.004} unit="m" decimals={3} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, posZ: v } })} />
+                      <SliderRow label="Snout Up/Down" value={bp.nose.posY} min={-0.12} max={0.12} step={0.004} unit="m" decimals={3} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, posY: v } })} />
+                      <SliderRow label="Left / Right" value={bp.nose.posX} min={-0.06} max={0.06} step={0.002} unit="m" decimals={3} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, posX: v } })} />
+                      <SliderRow label="Surface Push/Sink" value={bp.nose.embed} min={-0.025} max={0.04} step={0.002} unit="m" decimals={3} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, embed: v } })} />
+                      <SliderRow label="Tilt Angle" value={bp.nose.tiltDeg} min={-40} max={40} step={1} unit="°" decimals={0} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, tiltDeg: v } })} />
+                      {bp.nose.showNostrils && (
+                        <SliderRow label="Nostril Size" value={bp.nose.nostrilScale} min={0.4} max={1.6} step={0.05} onDragStart={() => setIsSliderActive(true)} onDragEnd={() => setIsSliderActive(false)} onChange={(v) => patchBp({ nose: { ...bp.nose, nostrilScale: v } })} />
+                      )}
+                    </div>
+                    {bp.nose.style !== 'nostrilsOnly' && (
+                      <label className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.04] px-3 py-2 cursor-pointer">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Show Nostrils</span>
+                        <input
+                          type="checkbox"
+                          checked={bp.nose.showNostrils}
+                          onChange={(e) => patchBp({ nose: { ...bp.nose, showNostrils: e.target.checked } }, true)}
+                          className="w-4 h-4 accent-[#7C5CFF]"
+                        />
+                      </label>
+                    )}
+                    <div className="space-y-1.5">
+                      {bp.nose.style !== 'nostrilsOnly' && (
+                        <ColorField label="Nose Color" value={bp.nose.color} onChange={(c) => patchBp({ nose: { ...bp.nose, color: c } })} />
+                      )}
+                      {(bp.nose.showNostrils || bp.nose.style === 'nostrilsOnly') && (
+                        <ColorField label="Nostril Color" value={bp.nose.nostrilColor} onChange={(c) => patchBp({ nose: { ...bp.nose, nostrilColor: c } })} />
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         );
       case 'mouth':

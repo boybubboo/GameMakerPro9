@@ -3255,6 +3255,7 @@ export type MonsterPartKey =
   | 'neck'
   | 'head'
   | 'muzzle'
+  | 'nose'
   | 'mouth'
   | 'teeth'
   | 'eyes'
@@ -3338,6 +3339,26 @@ export interface MonsterMuzzleConfig {
   offsetZ: number;
   blendScale: number;
   color: string;
+}
+
+export type MonsterNoseStyle = 'none' | 'round' | 'oval' | 'triangle' | 'snoutPad' | 'nostrilsOnly';
+
+export interface MonsterNoseConfig {
+  enabled: boolean;
+  style: MonsterNoseStyle;
+  width: number;
+  height: number;
+  depth3D: number; // 0.06 (flat conformed) .. 1.3 (full 3D)
+  shine: number;
+  showNostrils: boolean;
+  nostrilScale: number;
+  posX: number;
+  posY: number;
+  posZ: number;
+  embed: number;
+  tiltDeg: number;
+  color: string;
+  nostrilColor: string;
 }
 
 export interface MonsterMouthConfig {
@@ -3502,6 +3523,7 @@ export interface MonsterBlueprint {
     craniumTiltDeg: number;
   };
   muzzle?: MonsterMuzzleConfig;
+  nose?: MonsterNoseConfig;
   mouth?: MonsterMouthConfig;
   teeth?: MonsterTeethConfig;
   eyes?: MonsterEyesConfig;

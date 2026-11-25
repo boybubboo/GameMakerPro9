@@ -7,6 +7,135 @@ import type {
 } from '../types/maker';
 import { evaluateMotionEasing } from './proceduralRigAnimator';
 
+export interface TreasureChestAnimRig {
+  lidPivot: THREE.Object3D | null;
+  innerGlowMesh: THREE.Mesh;
+  innerGlowMat: THREE.MeshBasicMaterial;
+  auraGroup: THREE.Group;
+  auraMats: THREE.MeshBasicMaterial[];
+  glowLight: THREE.PointLight;
+  openProgress: number;
+  opening: boolean;
+  openDuration: number;
+  openElapsed: number;
+  useMechController?: boolean;
+}
+
+/**
+ * Attaches an emissive golden interior glow plane, rising additive gold light beams,
+ * and a dynamic PointLight inside any treasure chest mouth (no fixed coin/item meshes).
+ */
+export function attachChestGoldenGlow(
+  parentGroup: THREE.Group,
+  innerW: number,
+  innerD: number,
+  mouthY: number,
+  lidPivot: THREE.Object3D | null,
+  useMechController = false
+): TreasureChestAnimRig {
+  const innerGlowMat = new THREE.MeshBasicMaterial({
+    color: '#FFE97D',
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const innerGlowMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(innerW, innerD),
+    innerGlowMat
+  );
+  innerGlowMesh.name = 'Chest_Gold_Glow_Core';
+  innerGlowMesh.rotation.x = -Math.PI / 2;
+  innerGlowMesh.position.set(0, mouthY, 0);
+  innerGlowMesh.visible = false;
+  innerGlowMesh.userData.ignoreInHierarchy = true;
+  parentGroup.add(innerGlowMesh);
+
+  const auraGroup = new THREE.Group();
+  auraGroup.name = 'Chest_Gold_Aura';
+  auraGroup.position.set(0, mouthY, 0);
+  auraGroup.visible = false;
+  auraGroup.userData.ignoreInHierarchy = true;
+
+  const auraMats: THREE.MeshBasicMaterial[] = [];
+
+  // Expanding golden volumetric cone fanning upward from chest interior
+  const beamConeMat = new THREE.MeshBasicMaterial({
+    color: '#FFD24C',
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  auraMats.push(beamConeMat);
+  const beamCone = new THREE.Mesh(
+    new THREE.CylinderGeometry(innerW * 0.72, innerW * 0.42, 0.88, 16, 1, true),
+    beamConeMat
+  );
+  beamCone.position.set(0, 0.44, 0);
+  beamCone.scale.set(1, 1, Math.max(0.65, innerD / Math.max(0.1, innerW)));
+  auraGroup.add(beamCone);
+
+  // Soft crossed rising gold rays
+  for (const ry of [0, Math.PI / 3, -Math.PI / 3]) {
+    const rayMat = new THREE.MeshBasicMaterial({
+      color: '#FFF2A6',
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    auraMats.push(rayMat);
+    const ray = new THREE.Mesh(
+      new THREE.PlaneGeometry(innerW * 1.12, 0.96),
+      rayMat
+    );
+    ray.position.set(0, 0.48, 0);
+    ray.rotation.y = ry;
+    auraGroup.add(ray);
+  }
+
+  // Radiant golden halo pool just above mouth
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: '#FFBF2E',
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  auraMats.push(haloMat);
+  const halo = new THREE.Mesh(new THREE.CircleGeometry(innerW * 0.65, 20), haloMat);
+  halo.rotation.x = -Math.PI / 2;
+  halo.position.set(0, 0.06, 0);
+  auraGroup.add(halo);
+
+  parentGroup.add(auraGroup);
+
+  const glowLight = new THREE.PointLight('#FFD24C', 0, 6.2, 1.55);
+  glowLight.position.set(0, mouthY + 0.36, 0.06);
+  glowLight.userData.ignoreInHierarchy = true;
+  parentGroup.add(glowLight);
+
+  const rig: TreasureChestAnimRig = {
+    lidPivot,
+    innerGlowMesh,
+    innerGlowMat,
+    auraGroup,
+    auraMats,
+    glowLight,
+    openProgress: 0,
+    opening: false,
+    openDuration: 0.95,
+    openElapsed: 0,
+    useMechController,
+  };
+  parentGroup.userData.chestAnim = rig;
+  return rig;
+}
+
 export interface ObjectPartNode {
   /** Stable hierarchical path relative to modelRoot, e.g. "0:Chest_Body" or "1:Chest_Lid/0:Lid_Dome" */
   path: string;
@@ -633,15 +762,6 @@ export function createBuiltinMechanismModel(template: BuiltinMechanismTemplate):
     interiorCavity.position.set(0, 0.51, 0);
     baseGroup.add(interiorCavity);
 
-    // Gold coin hoard nestled inside
-    const goldPile = setShadow(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.16, 16), goldMat)
-    );
-    goldPile.name = 'Gold_Hoard';
-    goldPile.scale.set(1.05, 0.7, 0.65);
-    goldPile.position.set(0, 0.53, 0);
-    baseGroup.add(goldPile);
-
     // Iron base bands & corner brackets
     for (const sx of [-0.46, 0.46]) {
       const band = setShadow(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.58, 0.8), ironMat));
@@ -697,6 +817,7 @@ export function createBuiltinMechanismModel(template: BuiltinMechanismTemplate):
     lidGroup.add(clasp);
 
     root.add(lidGroup);
+    attachChestGoldenGlow(root, 0.94, 0.54, 0.585, lidGroup, true);
   } else if (template === 'slidingDoor') {
     const stoneMat = new THREE.MeshStandardMaterial({
       color: '#6C7382',

@@ -18,6 +18,8 @@ import type {
   MonsterLegPairConfig,
   MonsterMouthConfig,
   MonsterMuzzleConfig,
+  MonsterNoseConfig,
+  MonsterNoseStyle,
   MonsterPartKey,
   MonsterPawStyle,
   MonsterSegmentProfile,
@@ -138,6 +140,7 @@ export interface ResolvedMonsterBlueprint extends MonsterBlueprint {
     craniumTiltDeg: number;
   };
   muzzle: MonsterMuzzleConfig;
+  nose: MonsterNoseConfig;
   mouth: MonsterMouthConfig;
   teeth: MonsterTeethConfig;
   ears: MonsterEarsConfig;
@@ -837,6 +840,32 @@ export function resolveMonsterBlueprint(raw: MonsterBlueprint): ResolvedMonsterB
     ...(raw.muzzle ?? {}),
   };
 
+  const defaultNoseStyle: MonsterNoseStyle = isSpider
+    ? 'none'
+    : isBear
+    ? 'oval'
+    : raw.headStyle === 'wolf'
+    ? 'triangle'
+    : 'nostrilsOnly';
+  const nose: MonsterNoseConfig = {
+    enabled: !isSpider && muzzle.nostrils !== false,
+    style: defaultNoseStyle,
+    width: isBear ? 0.038 : raw.headStyle === 'wolf' ? 0.028 : 0.03,
+    height: isBear ? 0.025 : raw.headStyle === 'wolf' ? 0.022 : 0.02,
+    depth3D: isBear ? 0.58 : raw.headStyle === 'wolf' ? 0.48 : 0.25,
+    shine: isBear || raw.headStyle === 'wolf' ? 0.55 : 0.2,
+    showNostrils: true,
+    nostrilScale: 1.0,
+    posX: 0,
+    posY: 0,
+    posZ: 0,
+    embed: 0,
+    tiltDeg: 0,
+    color: isBear || raw.headStyle === 'wolf' ? '#1E1618' : raw.accentColor,
+    nostrilColor: '#111827',
+    ...(raw.nose ?? {}),
+  };
+
   const ears: MonsterEarsConfig = {
     style: defaultEarsForStyle(raw),
     size: 1.0,
@@ -1099,6 +1128,7 @@ export function resolveMonsterBlueprint(raw: MonsterBlueprint): ResolvedMonsterB
     neck,
     head,
     muzzle,
+    nose,
     mouth,
     teeth,
     ears,
@@ -3282,6 +3312,7 @@ export function buildQuadrupedMonsterMesh(
     eyebrows: [],
     mouth: [],
     teeth: [],
+    nose: [],
     ears: [],
     horns: [],
     wings: [],
@@ -3376,7 +3407,14 @@ export function buildQuadrupedMonsterMesh(
     roughness: 0.24,
     metalness: 0.02,
   });
-  const nostrilMat = new THREE.MeshBasicMaterial({ color: '#111827' });
+  const noseRough = THREE.MathUtils.clamp(0.88 - bp.nose.shine * 0.72, 0.12, 0.94);
+  const noseMat = new THREE.MeshStandardMaterial({
+    color: bp.nose.color,
+    roughness: noseRough,
+    metalness: 0.02,
+    envMapIntensity: 0.2 + bp.nose.shine * 0.45,
+  });
+  const nostrilMat = new THREE.MeshBasicMaterial({ color: bp.nose.nostrilColor });
   const wingBoneMat = new THREE.MeshStandardMaterial({
     color: bp.wings.boneColor,
     roughness: 0.88,
@@ -3740,33 +3778,195 @@ export function buildQuadrupedMonsterMesh(
       });
     }
 
-    // Surface-Conformed Nostrils & Fangs
-    const snoutOrigin = hi.muzzleStart
-      ? hi.muzzleStart.clone().lerp(hi.muzzleTip, 0.66)
-      : hi.headCenter.clone().addScaledVector(hi.headFwd, bp.head.length * 0.2);
-
-    if (bp.muzzle.enabled) {
-      if (bp.muzzle.nostrils) {
-        ([-1, 1] as const).forEach((s) => {
-          const nRay = hi.muzzleDir
-            .clone()
-            .multiplyScalar(0.85)
-            .addScaledVector(sideRight, s * 0.38)
-            .addScaledVector(worldUp, 0.42);
-          const nFallback = hi.muzzleTip
-            .clone()
-            .addScaledVector(sideRight, s * bp.muzzle.width * bp.muzzle.taper * 0.42)
-            .addScaledVector(worldUp, bp.muzzle.height * bp.muzzle.taper * 0.38);
-          const nHit = snapToSdfSurface(evaluator, snoutOrigin, nRay, nFallback, 0.55);
-          const pit = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), nostrilMat);
-          pit.scale.set(0.82, 1.12, 0.42);
-          pit.position.copy(worldToHeadLocal(hi.headBone, nHit.point.clone().addScaledVector(nHit.normal, 0.0015)));
-          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), nHit.normal);
-          pit.quaternion.copy(q);
-          hi.headBone.add(pit);
-          partMeshes.muzzle?.push(pit);
-        });
+    // Surface-Conformed Adjustable Nose (Round / Oval / Soft Triangle / Snout Pad / Nostrils-Only, Flat-to-3D)
+    const nc = bp.nose;
+    if (nc.enabled && nc.style !== 'none') {
+      let noseOrigin = bp.muzzle.enabled && hi.muzzleStart
+        ? hi.muzzleStart.clone().lerp(hi.muzzleTip, 0.56)
+        : hi.headCenter.clone().addScaledVector(hi.headFwd, bp.head.length * 0.14);
+      if (nc.posZ < -0.01) {
+        noseOrigin = noseOrigin.clone().lerp(hi.headCenter, THREE.MathUtils.clamp(-nc.posZ * 4.5, 0, 0.92));
       }
+      if (evaluator.evaluate(noseOrigin.x, noseOrigin.y, noseOrigin.z) >= -0.004) {
+        noseOrigin = hi.headCenter.clone();
+      }
+
+      const baseNoseRay = (bp.muzzle.enabled ? hi.muzzleDir : fwdDir)
+        .clone()
+        .multiplyScalar(0.86)
+        .addScaledVector(worldUp, bp.muzzle.enabled ? 0.36 : 0.06)
+        .normalize();
+      const baseNoseFb = (bp.muzzle.enabled ? hi.muzzleTip : hi.headCenter.clone().addScaledVector(fwdDir, bp.head.midRadius * 0.92))
+        .clone()
+        .addScaledVector(worldUp, bp.muzzle.enabled ? bp.muzzle.height * bp.muzzle.taper * 0.32 : 0.01);
+      const baseNoseHit = snapToSdfSurface(evaluator, noseOrigin, baseNoseRay, baseNoseFb, 0.72);
+
+      const shiftedNoseHint = baseNoseHit.point
+        .clone()
+        .addScaledVector(sideRight, nc.posX)
+        .addScaledVector(worldUp, nc.posY)
+        .addScaledVector(fwdDir, nc.posZ);
+      const noseHit = snapToSdfSurface(
+        evaluator,
+        noseOrigin,
+        shiftedNoseHint.clone().sub(noseOrigin),
+        shiftedNoseHint,
+        0.8
+      );
+
+      const nNormal = noseHit.normal.clone().normalize();
+      const nUp = worldUp.clone().addScaledVector(nNormal, -worldUp.dot(nNormal));
+      if (nUp.lengthSq() < 1e-6) nUp.copy(fwdDir);
+      nUp.normalize();
+      const nRight = new THREE.Vector3().crossVectors(nUp, nNormal).normalize();
+
+      const nosePivot = new THREE.Group();
+      nosePivot.position.copy(worldToHeadLocal(hi.headBone, noseHit.point));
+      hi.headBone.add(nosePivot);
+      nosePivot.updateMatrixWorld(true);
+
+      const nw = THREE.MathUtils.clamp(nc.width, 0.01, 0.14);
+      const nh = THREE.MathUtils.clamp(nc.height, 0.008, 0.11);
+      const depth3D = THREE.MathUtils.clamp(nc.depth3D, 0.04, 1.4);
+      const embed = THREE.MathUtils.clamp(nc.embed, -0.03, 0.05);
+      const tiltRad = THREE.MathUtils.degToRad(nc.tiltDeg);
+      const domeAxis = nNormal
+        .clone()
+        .multiplyScalar(Math.cos(tiltRad))
+        .addScaledVector(nUp, Math.sin(tiltRad))
+        .normalize();
+
+      const mapShapeXY = (ang: number, rf: number): [number, number] => {
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        if (nc.style === 'round') {
+          return [ca * nw * rf, sa * nw * rf];
+        }
+        if (nc.style === 'oval') {
+          return [ca * nw * rf, sa * nh * rf];
+        }
+        if (nc.style === 'snoutPad') {
+          const p = 2.8;
+          const superScale = 1 / Math.pow(Math.pow(Math.abs(ca), p) + Math.pow(Math.abs(sa), p) + 1e-6, 1 / p);
+          return [ca * superScale * nw * 1.12 * rf, sa * superScale * nh * 0.96 * rf];
+        }
+        // Soft rounded triangle / shield nose
+        const u = ca * rf;
+        const v = sa * rf;
+        const x = u * (0.76 + 0.34 * v) * nw;
+        const y = (v * 0.92 - 0.14 * u * u * (v > 0 ? 1 : -0.4)) * nh;
+        return [x, y];
+      };
+
+      const computeDomeElev = (rf: number) => {
+        const clamped = THREE.MathUtils.clamp(rf, 0, 1);
+        const domeProfile = Math.pow(Math.max(0, 1 - clamped * clamped), 0.56);
+        const maxLift = Math.max(nw, nh) * depth3D * 0.78 + 0.0024;
+        const skirtSink = clamped >= 0.99 ? -0.003 : 0;
+        return maxLift * domeProfile + skirtSink + embed;
+      };
+
+      const projectNosePt = (xOff: number, yOff: number, rf: number) => {
+        const worldHint = noseHit.point
+          .clone()
+          .addScaledVector(nRight, xOff)
+          .addScaledVector(nUp, yOff);
+        const ray = worldHint.clone().sub(noseOrigin);
+        const sHit = snapToSdfSurface(evaluator, noseOrigin, ray, worldHint, 0.8);
+        const elev = computeDomeElev(rf);
+        // Outer perimeter snaps along local SDF normal so edge sits flush; inner dome rises along domeAxis
+        const dirBlend = THREE.MathUtils.lerp(1, 0, THREE.MathUtils.clamp(rf, 0, 1));
+        const pushDir = sHit.normal.clone().lerp(domeAxis, dirBlend).normalize();
+        const worldPt = sHit.point.clone().addScaledVector(pushDir, elev);
+        return {
+          local: nosePivot.worldToLocal(worldPt),
+          normalWorld: pushDir,
+        };
+      };
+
+      if (nc.style === 'nostrilsOnly') {
+        const ns = THREE.MathUtils.clamp(nc.nostrilScale, 0.4, 1.8);
+        ([-1, 1] as const).forEach((s) => {
+          const proj = projectNosePt(s * nw * 0.52, 0, 0.8);
+          const worldTarget = noseHit.point
+            .clone()
+            .addScaledVector(nRight, s * nw * 0.52)
+            .addScaledVector(nUp, 0);
+          const sHit = snapToSdfSurface(evaluator, noseOrigin, worldTarget.clone().sub(noseOrigin), worldTarget, 0.78);
+          const pit = new THREE.Mesh(new THREE.SphereGeometry(0.011 * ns, 10, 8), nostrilMat);
+          pit.scale.set(0.84, 1.15, THREE.MathUtils.clamp(depth3D * 0.65, 0.18, 0.65));
+          pit.position.copy(
+            nosePivot.worldToLocal(sHit.point.clone().addScaledVector(sHit.normal, 0.0018 + embed))
+          );
+          void proj;
+          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), sHit.normal);
+          pit.quaternion.copy(q);
+          nosePivot.add(pit);
+        });
+      } else {
+        const angSegs = 24;
+        const radRings = 6;
+        const nVerts: number[] = [];
+        const nIdx: number[] = [];
+
+        const centerPt = projectNosePt(0, 0, 0).local;
+        nVerts.push(centerPt.x, centerPt.y, centerPt.z);
+
+        for (let r = 1; r <= radRings; r++) {
+          const rf = r === radRings ? 1.03 : (r / radRings) * 0.98;
+          for (let a = 0; a < angSegs; a++) {
+            const theta = (a / angSegs) * Math.PI * 2;
+            const [ox, oy] = mapShapeXY(theta, Math.min(1.02, rf));
+            const pt = projectNosePt(ox, oy, rf).local;
+            nVerts.push(pt.x, pt.y, pt.z);
+          }
+        }
+
+        // Center fan (outward facing along +nNormal: (0, cur, next))
+        for (let a = 0; a < angSegs; a++) {
+          const next = (a + 1) % angSegs;
+          nIdx.push(0, 1 + a, 1 + next);
+        }
+        // Concentric rings
+        for (let r = 1; r < radRings; r++) {
+          const ringStart = 1 + (r - 1) * angSegs;
+          const nextRingStart = 1 + r * angSegs;
+          for (let a = 0; a < angSegs; a++) {
+            const next = (a + 1) % angSegs;
+            const i0 = ringStart + a;
+            const i1 = ringStart + next;
+            const o0 = nextRingStart + a;
+            const o1 = nextRingStart + next;
+            nIdx.push(i0, o0, i1, i1, o0, o1);
+          }
+        }
+
+        const noseGeo = new THREE.BufferGeometry();
+        noseGeo.setAttribute('position', new THREE.Float32BufferAttribute(nVerts, 3));
+        noseGeo.setIndex(nIdx);
+        noseGeo.computeVertexNormals();
+        const noseMesh = new THREE.Mesh(noseGeo, noseMat);
+        noseMesh.castShadow = true;
+        nosePivot.add(noseMesh);
+
+        if (nc.showNostrils) {
+          const ns = THREE.MathUtils.clamp(nc.nostrilScale, 0.4, 1.8);
+          ([-1, 1] as const).forEach((s) => {
+            const nx = s * nw * (nc.style === 'snoutPad' ? 0.44 : 0.36);
+            const ny = nc.style === 'snoutPad' ? 0.0 : -nh * 0.16;
+            const rfApprox = nc.style === 'snoutPad' ? 0.42 : 0.45;
+            const nProj = projectNosePt(nx, ny, rfApprox);
+            const pit = new THREE.Mesh(new THREE.SphereGeometry(0.0075 * ns, 10, 8), nostrilMat);
+            pit.scale.set(0.75, 1.08, 0.45);
+            pit.position.copy(nProj.local);
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), nProj.normalWorld);
+            pit.quaternion.copy(q);
+            nosePivot.add(pit);
+          });
+        }
+      }
+
+      partMeshes.nose?.push(nosePivot);
     }
 
     // Surface-Conformed 5-Mood Expressive Mouth (Black Void + Inner/Stick-Out Tongue + Separate Teeth Rig)
@@ -3909,6 +4109,33 @@ export function buildQuadrupedMonsterMesh(
       const cols = 15;
       const rows = 5;
 
+      const buildTaperedLip = (pts: THREE.Vector3[], maxRad: number) => {
+        const segs = 22;
+        const radSegs = 10;
+        const curve = new THREE.CatmullRomCurve3(pts);
+        const geo = new THREE.TubeGeometry(curve, segs, maxRad, radSegs, false);
+        const pos = geo.attributes.position as THREE.BufferAttribute;
+        const vTmp = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          const ringIdx = Math.floor(i / (radSegs + 1));
+          const frac = THREE.MathUtils.clamp(ringIdx / segs, 0, 1);
+          const cPt = curve.getPointAt(frac);
+          const taper = 0.22 + 0.78 * Math.pow(Math.max(0, Math.sin(frac * Math.PI)), 0.55);
+          vTmp.fromBufferAttribute(pos, i).sub(cPt).multiplyScalar(taper).add(cPt);
+          pos.setXYZ(i, vTmp.x, vTmp.y, vTmp.z);
+        }
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, lipMat);
+        mesh.castShadow = true;
+        const capRad = maxRad * 0.22;
+        for (const endPt of [pts[0], pts[pts.length - 1]]) {
+          const cap = new THREE.Mesh(new THREE.SphereGeometry(capRad, 8, 6), lipMat);
+          cap.position.copy(endPt);
+          mesh.add(cap);
+        }
+        return mesh;
+      };
+
       if (isPureClosed) {
         const lipPts: THREE.Vector3[] = [];
         for (let i = 0; i < cols; i++) {
@@ -3916,15 +4143,7 @@ export function buildQuadrupedMonsterMesh(
           const [ty] = getTopBot(u);
           lipPts.push(projectToLipGrp(u * effW, ty, lipOutBias).local);
         }
-        const lipCurve = new THREE.CatmullRomCurve3(lipPts);
-        const lipTube = new THREE.Mesh(new THREE.TubeGeometry(lipCurve, 20, mc.lipThickness, 10, false), lipMat);
-        lipTube.castShadow = true;
-        grp.add(lipTube);
-        for (const endPt of [lipPts[0], lipPts[lipPts.length - 1]]) {
-          const cap = new THREE.Mesh(new THREE.SphereGeometry(mc.lipThickness * 0.96, 10, 8), lipMat);
-          cap.position.copy(endPt);
-          grp.add(cap);
-        }
+        grp.add(buildTaperedLip(lipPts, mc.lipThickness));
       } else {
         // 1. Matte-black curved void interior grid conforming cleanly onto snout/head SDF
         const cavVerts: number[] = [];
@@ -3956,8 +4175,9 @@ export function buildQuadrupedMonsterMesh(
             botRimOut.x, botRimOut.y, botRimOut.z
           );
 
-          topLipPts.push(projectToLipGrp(x, ty + mc.lipThickness * 0.25, lipOutBias).local);
-          botLipPts.push(projectToLipGrp(x, by - mc.lipThickness * 0.25, lipOutBias).local);
+          const lipTaperBias = Math.sqrt(Math.max(0.08, 1 - u * u * 0.9));
+          topLipPts.push(projectToLipGrp(x, ty + mc.lipThickness * 0.24 * lipTaperBias, lipOutBias).local);
+          botLipPts.push(projectToLipGrp(x, by - mc.lipThickness * 0.24 * lipTaperBias, lipOutBias).local);
         }
 
         for (let i = 0; i < cols - 1; i++) {
@@ -3986,23 +4206,10 @@ export function buildQuadrupedMonsterMesh(
         rimGeo.computeVertexNormals();
         grp.add(new THREE.Mesh(rimGeo, innerRimMat));
 
-        const topLipMesh = new THREE.Mesh(
-          new THREE.TubeGeometry(new THREE.CatmullRomCurve3(topLipPts), 20, mc.lipThickness * 0.86, 8, false),
-          lipMat
+        grp.add(
+          buildTaperedLip(topLipPts, mc.lipThickness * 0.92),
+          buildTaperedLip(botLipPts, mc.lipThickness * 0.92)
         );
-        const botLipMesh = new THREE.Mesh(
-          new THREE.TubeGeometry(new THREE.CatmullRomCurve3(botLipPts), 20, mc.lipThickness * 0.86, 8, false),
-          lipMat
-        );
-        topLipMesh.castShadow = true;
-        botLipMesh.castShadow = true;
-        grp.add(topLipMesh, botLipMesh);
-
-        for (const corner of [topLipPts[0], topLipPts[topLipPts.length - 1]]) {
-          const cap = new THREE.Mesh(new THREE.SphereGeometry(mc.lipThickness * 0.88, 10, 8), lipMat);
-          cap.position.copy(corner);
-          grp.add(cap);
-        }
 
         // 2. Inner flat cartoon tongue contained STRICTLY inside lower half of black void & BEHIND teeth
         if (mc.tongueVisible && (m === 'open' || m === 'happy' || m === 'angry' || restOpen > 0.04)) {
@@ -4057,62 +4264,112 @@ export function buildQuadrupedMonsterMesh(
 
         // Flat Top & Bottom Tooth Strips hugging the inside edge of upper and lower lips
         if (tc.style === 'strips' || tc.style === 'stripsAndCanine') {
+          const stripMat = teethMat.clone();
+          stripMat.side = THREE.DoubleSide;
           const stripCols = 17;
+          const stripRows = 3;
           const buildStrip = (isTop: boolean) => {
             const verts: number[] = [];
             const idxs: number[] = [];
-            const stripSpan = m === 'open' ? 0.72 : 0.84;
-            const stripH = Math.max(0.005, (isPureClosed ? mw * 0.095 : Math.max(openH * 0.26, mw * 0.1)) * tSize);
+            const stripSpan = m === 'open' ? 0.78 : m === 'shy' ? 0.72 : 0.88;
+            const maxOpening = Math.max(0.006, openH * 0.42);
+            const stripH = Math.max(
+              0.005,
+              Math.min(
+                maxOpening * Math.max(0.75, tSize),
+                (isPureClosed ? mw * 0.065 : Math.max(openH * 0.24, mw * 0.095)) * tSize
+              )
+            );
             const yShift = tc.offsetY + (isTop ? tc.topOffsetY : tc.bottomOffsetY);
-            const depthFront = zTeeth + 0.0036;
-            const depthBack = zTeeth - 0.0005;
+            const depthFront = (isPureClosed ? 0.0038 : 0.0046) + tc.offsetZ;
+            const depthBack = depthFront - 0.0024;
 
+            // Front curved white ribbon (stripCols x stripRows) snapped cleanly onto SDF curvature
             for (let i = 0; i < stripCols; i++) {
               const frac = i / (stripCols - 1);
               const u = (-1 + 2 * frac) * stripSpan * Math.min(1.12, tSpread);
-              const uClamped = THREE.MathUtils.clamp(u, -0.94, 0.94);
+              const uClamped = THREE.MathUtils.clamp(u, -0.95, 0.95);
               const [ty, by] = getTopBot(uClamped);
               const x = uClamped * effW + tc.offsetX;
+              const taperEnd = 0.55 + 0.45 * Math.sqrt(Math.max(0.12, 1 - uClamped * uClamped * 0.82));
               const serration =
                 tSharp > 0.05
-                  ? Math.abs(Math.sin(frac * Math.PI * 5)) * stripH * 0.55 * tSharp
+                  ? Math.abs(Math.sin(frac * Math.PI * 5)) * stripH * 0.52 * tSharp
                   : 0;
 
-              let yEdgeA: number;
-              let yEdgeB: number;
+              let yRoot: number;
+              let yBite: number;
               if (isTop) {
-                yEdgeA = ty + (isPureClosed ? 0.003 : -0.001) + yShift;
-                yEdgeB = yEdgeA - stripH * (0.52 + 0.48 * Math.sqrt(Math.max(0.15, 1 - uClamped * uClamped * 0.75))) - serration;
+                yRoot = ty + (isPureClosed ? 0.002 : mc.lipThickness * 0.14) + yShift;
+                yBite = ty - stripH * taperEnd - serration + yShift;
               } else {
-                yEdgeA = by + (isPureClosed ? -0.003 : 0.001) + yShift;
-                yEdgeB = yEdgeA + stripH * 0.82 * (0.52 + 0.48 * Math.sqrt(Math.max(0.15, 1 - uClamped * uClamped * 0.75))) + serration;
+                yRoot = by - (isPureClosed ? 0.002 : mc.lipThickness * 0.14) + yShift;
+                yBite = by + stripH * 0.88 * taperEnd + serration + yShift;
               }
 
-              const fA = projectToLipGrp(x, yEdgeA, depthFront).local;
-              const fB = projectToLipGrp(x, yEdgeB, depthFront).local;
-              const bA = projectToLipGrp(x, yEdgeA, depthBack).local;
-              const bB = projectToLipGrp(x, yEdgeB, depthBack).local;
-              verts.push(
-                fA.x, fA.y, fA.z,
-                fB.x, fB.y, fB.z,
-                bA.x, bA.y, bA.z,
-                bB.x, bB.y, bB.z
-              );
+              for (let r = 0; r < stripRows; r++) {
+                const vf = r / (stripRows - 1);
+                const y = THREE.MathUtils.lerp(yRoot, yBite, vf);
+                // Slight smooth front convexity so root & biting edge sit softly into mouth opening
+                const zBias = depthFront + Math.sin(vf * Math.PI * 0.75) * 0.0006;
+                const pt = projectToLipGrp(x, y, zBias).local;
+                verts.push(pt.x, pt.y, pt.z);
+              }
             }
 
+            // Front face triangles (strictly outward facing toward +n0)
             for (let i = 0; i < stripCols - 1; i++) {
-              const a = i * 4;
-              const c = (i + 1) * 4;
-              // Front face + biting edge face + root bevel
-              idxs.push(a, c, a + 1, a + 1, c, c + 1);
-              idxs.push(a + 1, c + 1, a + 3, a + 3, c + 1, c + 3);
-              idxs.push(a + 2, a, c + 2, c + 2, a, c);
+              for (let r = 0; r < stripRows - 1; r++) {
+                const a = i * stripRows + r;
+                const b = a + 1;
+                const c = (i + 1) * stripRows + r;
+                const d = c + 1;
+                if (isTop) {
+                  // y decreases from r=0 (root) to r=2 (bite), x increases from i to i+1 -> (-Y) x (+X) = +Z
+                  idxs.push(a, b, c, b, d, c);
+                } else {
+                  // y increases from r=0 (root) to r=2 (bite), x increases from i to i+1 -> (+X) x (+Y) = +Z
+                  idxs.push(a, c, b, b, c, d);
+                }
+              }
             }
+
+            // Biting-edge thickness skirt connecting front biting edge back into void so tooth strip looks solid from any angle
+            const backOffset = stripCols * stripRows;
+            for (let i = 0; i < stripCols; i++) {
+              const frac = i / (stripCols - 1);
+              const u = (-1 + 2 * frac) * stripSpan * Math.min(1.12, tSpread);
+              const uClamped = THREE.MathUtils.clamp(u, -0.95, 0.95);
+              const [ty, by] = getTopBot(uClamped);
+              const x = uClamped * effW + tc.offsetX;
+              const taperEnd = 0.55 + 0.45 * Math.sqrt(Math.max(0.12, 1 - uClamped * uClamped * 0.82));
+              const serration =
+                tSharp > 0.05
+                  ? Math.abs(Math.sin(frac * Math.PI * 5)) * stripH * 0.52 * tSharp
+                  : 0;
+              const yBite = isTop
+                ? ty - stripH * taperEnd - serration + yShift
+                : by + stripH * 0.88 * taperEnd + serration + yShift;
+              const ptBack = projectToLipGrp(x, yBite, depthBack).local;
+              verts.push(ptBack.x, ptBack.y, ptBack.z);
+            }
+            for (let i = 0; i < stripCols - 1; i++) {
+              const frontL = i * stripRows + (stripRows - 1);
+              const frontR = (i + 1) * stripRows + (stripRows - 1);
+              const backL = backOffset + i;
+              const backR = backOffset + i + 1;
+              if (isTop) {
+                idxs.push(frontL, backL, frontR, backL, backR, frontR);
+              } else {
+                idxs.push(frontL, frontR, backL, backL, frontR, backR);
+              }
+            }
+
             const sGeo = new THREE.BufferGeometry();
             sGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
             sGeo.setIndex(idxs);
             sGeo.computeVertexNormals();
-            const sMesh = new THREE.Mesh(sGeo, teethMat);
+            const sMesh = new THREE.Mesh(sGeo, stripMat);
             sMesh.castShadow = true;
             teethGrp.add(sMesh);
           };
