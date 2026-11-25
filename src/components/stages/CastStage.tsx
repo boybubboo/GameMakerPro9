@@ -493,7 +493,7 @@ export const CastStage: React.FC<{ store: MakerStore }> = ({ store }) => {
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#EC4899]/15 text-[#EC4899] hover:bg-[#EC4899]/25 text-xs font-extrabold"
               >
                 <Sparkles size={13} />
-                <span>Monster Studio</span>
+                <span>Creature Maker</span>
               </button>
               <button
                 type="button"

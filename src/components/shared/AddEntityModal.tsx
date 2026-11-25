@@ -56,7 +56,7 @@ export const AddEntityModal: React.FC<{
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#EC4899]/15 text-[#EC4899] hover:bg-[#EC4899]/25 text-xs font-extrabold"
                   >
                     <Sparkles size={12} />
-                    <span>Open Monster Studio</span>
+                    <span>Open Creature Maker</span>
                   </button>
                 )}
               </div>

@@ -174,7 +174,7 @@ export function getEntityThumbnailKey(
 ): string {
   if (opts?.monsterConfig) {
     const m = opts.monsterConfig;
-    return `mon:${m.id}:${m.legPairs}:${m.headCount}:${m.headStyle}:${m.hornStyle}:${m.wingStyle}:${m.tailStyle}:${m.bodyColor}:${m.accentColor}:${m.wingColor}`;
+    return `mon:${m.id}:${m.legPairs}:${m.headCount}:${m.headStyle}:${m.hornStyle}:${m.wingStyle}:${m.tailStyle}:${m.materialFinish ?? 'clay'}:${m.ears?.style ?? 'auto'}:${m.ears?.thickness ?? 1}:${m.ears?.softness ?? 0.2}:${m.eyes?.pupilStyle ?? 'auto'}:${m.mouth?.mood ?? 'auto'}:${m.mouth?.tongueStickOut ?? 0}:${m.teeth?.style ?? 'auto'}:${m.teeth?.sharpness ?? 0.5}:${m.eyebrows?.mood ?? 'auto'}:${m.wings?.membraneOpacity ?? 0.76}:${m.surfaceCoat?.mode ?? 'none'}:${m.spikes?.enabled ?? m.spineSpikes}:${m.spikes?.style ?? 'auto'}:${m.spikes?.sinkDepth ?? 0.016}:${m.spikes?.softness ?? 0.2}:${m.bodyLength}:${m.bodyWidth}:${m.legHeight}:${m.scale}:${m.primaryAttack ?? 'clawSlash'}:${m.bodyColor}:${m.bellyColor}:${m.accentColor}:${m.wingColor}`;
   }
   const lower = (opts?.name ?? '').toLowerCase();
   const semanticHint =

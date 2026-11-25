@@ -63,6 +63,7 @@ import type {
   CarPresetId,
   ChatBubbleStyle,
   CraftingRecipe,
+  CreatureExpressionMood,
   CritterAttitude,
   CritterWarmTrigger,
   DialogueOutputMode,
@@ -79,6 +80,8 @@ import type {
   InventoryItemDef,
   InventoryStack,
   MisfitAbilityId,
+  MonsterAbilityId,
+  MonsterAttackType,
   ObjectInteractionAttributeId,
   ObjectInteractionCalibration,
   ObjectMechanism,
@@ -188,9 +191,14 @@ import {
 } from '../../three/proceduralModels';
 import {
   animateQuadrupedMonster,
+  resolveMonsterBlueprint,
   type QuadrupedAnimState,
   type QuadrupedMonsterRig,
 } from '../../three/quadrupedMonsterBuilder';
+import {
+  MonsterAttackVfxController,
+  MONSTER_ATTACK_BY_ID,
+} from '../../three/monsterAttackVfx';
 import {
   attachEquipmentToCustomModel,
   syncHeroEquipmentVisuals,
@@ -470,6 +478,15 @@ interface RuntimeEntity {
   recoilRoll: number;
   walkPhase: number;
   defeatSpin: number;
+  monsterPrimaryAttack?: MonsterAttackType;
+  monsterSecondaryAttack?: MonsterAttackType;
+  monsterAbility?: MonsterAbilityId;
+  monsterAttackPower?: number;
+  monsterAttackRange?: number;
+  monsterAttackCooldown?: number;
+  activeAttack: MonsterAttackType;
+  attackCycleCount: number;
+  regenTimer: number;
   pickupable: boolean;
   pickupItemId?: string;
   pickupQty: number;
@@ -1956,6 +1973,7 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
     };
 
     const activeFxRuntimes: FxEmitterRuntime[] = [];
+    const monsterVfx = new MonsterAttackVfxController(scene);
     const scentPuffGeo = new THREE.SphereGeometry(0.42, 10, 10);
     const sonarRingGeo = new THREE.RingGeometry(0.75, 1.08, 36);
     sonarRingGeo.rotateX(-Math.PI / 2);
@@ -2602,7 +2620,12 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
           quadrupedRig.flashMaterials = customFlashMats as unknown as THREE.MeshStandardMaterial[];
         }
 
-        const maxHp = Math.max(1, ent.health);
+        const resolvedMonster = ent.monsterConfig ? resolveMonsterBlueprint(ent.monsterConfig) : null;
+        const baseHp = Math.max(1, ent.health);
+        const maxHp =
+          resolvedMonster?.specialAbility === 'thickFat'
+            ? Math.max(baseHp + 1, Math.round(baseHp * 1.25))
+            : baseHp;
         let hpBar: EnemyHealthBar | null = null;
         if (ent.kind === 'baddie') {
           let barHeight = ent.isBoss ? 2.68 : baddieRig?.isFlyer ? 2.15 : 1.92;
@@ -2681,7 +2704,10 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
           yOffset: 0,
           health: maxHp,
           maxHealth: maxHp,
-          speed: ent.speed,
+          speed:
+            resolvedMonster?.specialAbility === 'swiftStride'
+              ? ent.speed * 1.22
+              : ent.speed,
           isBoss: ent.isBoss,
           brain: ent.brain,
           alive: true,
@@ -2706,6 +2732,15 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
           recoilRoll: 0,
           walkPhase: Math.random() * Math.PI * 2,
           defeatSpin: 0,
+          monsterPrimaryAttack: resolvedMonster?.primaryAttack,
+          monsterSecondaryAttack: resolvedMonster?.secondaryAttack,
+          monsterAbility: resolvedMonster?.specialAbility,
+          monsterAttackPower: resolvedMonster?.attackPower,
+          monsterAttackRange: resolvedMonster?.attackRange,
+          monsterAttackCooldown: resolvedMonster?.attackCooldown,
+          activeAttack: resolvedMonster?.primaryAttack ?? 'clawSlash',
+          attackCycleCount: 0,
+          regenTimer: 0,
           pickupable: Boolean(ent.pickupable || ent.pickupItemId || ent.kind === 'pickup'),
           pickupItemId: ent.pickupItemId,
           pickupQty: ent.pickupQty ?? 1,
@@ -5750,14 +5785,44 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 AudioEngine.playSound(activeLevel.audio.hit);
 
                 // Physical bump-back impulse, upward hop, hit-flash & stagger recoil
-                const knockSpeed = rt.isBoss ? 7.6 : 12.6;
+                const knockSpeed =
+                  (rt.isBoss ? 7.6 : 12.6) * (rt.monsterAbility === 'thickFat' ? 0.55 : 1);
                 rt.vx = nx * knockSpeed;
                 rt.vz = nz * knockSpeed;
-                rt.vy = rt.isBoss ? 2.6 : 4.3;
+                rt.vy = (rt.isBoss ? 2.6 : 4.3) * (rt.monsterAbility === 'thickFat' ? 0.65 : 1);
                 rt.hitFlashTimer = 0.2;
                 rt.recoilPitch = -0.66;
                 rt.recoilRoll = (Math.random() > 0.5 ? 1 : -1) * 0.34;
                 rt.mesh.rotation.y = Math.atan2(-nx, -nz);
+
+                if (
+                  rt.health > 0 &&
+                  (rt.monsterAbility === 'flameBody' || rt.monsterAbility === 'staticShell')
+                ) {
+                  const isFlame = rt.monsterAbility === 'flameBody';
+                  spawnCombatSparks(
+                    heroX + dx * 0.45,
+                    heroY + 1.0,
+                    heroZ + dz * 0.45,
+                    isFlame ? '#F97316' : '#FACC15',
+                    9,
+                    6.8
+                  );
+                  if (d < 1.65 && hitInvuln <= 0) {
+                    health -= 1;
+                    hitInvuln = 0.8;
+                    heroKnockVX = -nx * 5.2;
+                    heroKnockVZ = -nz * 5.2;
+                    heroRecoilTimer = 0.2;
+                    AudioEngine.playSound(isFlame ? 'hurt' : 'sparkle');
+                    showToast(
+                      isFlame ? `${rt.name}'s Flame Body scorched you!` : `${rt.name}'s Static Shell shocked you!`
+                    );
+                    if (health <= 0) {
+                      triggerHeroDeath();
+                    }
+                  }
+                }
 
                 const impactY = Math.max(-0.5, sampleLevelHeight(activeLevel, rt.x, rt.z)) + 1.0;
                 const sparkX = heroX + dx * 0.68;
@@ -7312,6 +7377,19 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                     : qMoving
                     ? 'walk'
                     : 'idle';
+                let qMood: CreatureExpressionMood = rt.quadrupedRig.blueprint.mouth.mood;
+                if (rt.skitEmote === 'angry') qMood = 'angry';
+                else if (rt.skitEmote === 'shy') qMood = 'shy';
+                else if (rt.skitEmote === 'shock') qMood = 'open';
+                else if (emCelebratesQ || tavernCelebrated || rt.critterCelebrateTimer > 0 || rt.warmedUp) {
+                  qMood = 'happy';
+                } else if (rt.critterAttitude === 'nervous') {
+                  qMood = 'shy';
+                } else if (rt.critterAttitude === 'grumpy' || rt.critterAttitude === 'teasing') {
+                  qMood = 'angry';
+                } else if (rt.isBuddy) {
+                  qMood = 'happy';
+                }
                 animateQuadrupedMonster(
                   rt.quadrupedRig,
                   dt,
@@ -7320,7 +7398,12 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                   buddyMoving ? 0.85 : qMoving ? 0.52 : 0,
                   qState,
                   0,
-                  slopePitch
+                  slopePitch,
+                  0,
+                  0,
+                  undefined,
+                  qMood,
+                  qMood
                 );
               }
               if (rt.creatureRefs) {
@@ -7483,9 +7566,50 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 }
               }
 
+              if (
+                rt.monsterAbility === 'regenerator' &&
+                rt.alive &&
+                rt.aiState !== 'dying' &&
+                rt.aiState !== 'stagger' &&
+                rt.health < rt.maxHealth
+              ) {
+                rt.regenTimer += simDt;
+                if (rt.regenTimer >= 5.5) {
+                  rt.regenTimer = 0;
+                  rt.health = Math.min(rt.maxHealth, rt.health + 1);
+                  spawnCombatSparks(
+                    rt.x,
+                    sampleLevelHeight(activeLevel, rt.x, rt.z) + 1.0,
+                    rt.z,
+                    '#4ADE80',
+                    5,
+                    3.8
+                  );
+                }
+              }
+
+              const curAttack = rt.activeAttack ?? 'clawSlash';
+              const attackMeta = MONSTER_ATTACK_BY_ID[curAttack] ?? MONSTER_ATTACK_BY_ID.clawSlash;
+              const berserkActive =
+                rt.monsterAbility === 'berserk' && rt.health <= Math.max(1, rt.maxHealth * 0.5);
+              const hasCustomMove = Boolean(rt.quadrupedRig && rt.monsterPrimaryAttack);
+              const windupTotal = hasCustomMove
+                ? attackMeta.windupDuration
+                : rt.isBoss
+                ? 0.58
+                : 0.46;
+              const strikeTotal = hasCustomMove ? attackMeta.strikeDuration : 0.24;
+
               const aggroRange = rt.isBoss ? 12.5 : 9.2;
-              const attackReach = rt.isBoss ? 2.75 : 2.2;
-              const bSpeed = Math.max(1.8, rt.speed * 0.95);
+              const attackReach = hasCustomMove
+                ? Math.max(
+                    rt.isBoss ? 2.75 : 2.2,
+                    Math.min(rt.monsterAttackRange ?? attackMeta.defaultRange, attackMeta.defaultRange + 0.7)
+                  )
+                : rt.isBoss
+                ? 2.75
+                : 2.2;
+              const bSpeed = Math.max(1.8, rt.speed * 0.95 * (berserkActive ? 1.26 : 1));
               let movingBaddie = false;
 
               if (rt.aiState === 'dying') {
@@ -7509,7 +7633,14 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 }
               } else if (rt.aiState === 'windup') {
                 rt.stateTimer -= simDt;
-                const windupTotal = rt.isBoss ? 0.58 : 0.46;
+                const windupProg = THREE.MathUtils.clamp(
+                  1 - rt.stateTimer / Math.max(0.05, windupTotal),
+                  0,
+                  1
+                );
+                if (rt.quadrupedRig) {
+                  monsterVfx.emitAttackStep(rt.quadrupedRig, curAttack, 'windup', windupProg, simDt);
+                }
                 // Track hero during first half of windup, then lock direction so player can dodge
                 if (rt.stateTimer > windupTotal * 0.42 && dist > 0.1) {
                   rt.attackDirX = (heroX - rt.x) / dist;
@@ -7518,38 +7649,73 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 }
                 if (rt.stateTimer <= 0) {
                   rt.aiState = 'strike';
-                  rt.stateTimer = 0.24;
+                  rt.stateTimer = strikeTotal;
                   rt.strikeDidHit = false;
-                  const lungeSpeed = rt.isBoss ? 9.2 : 8.4;
+                  const lungeMult =
+                    curAttack === 'chargeGore'
+                      ? 1.45
+                      : attackMeta.isRangedBreath || attackMeta.isRadialAoe
+                      ? 0.18
+                      : 1.0;
+                  const lungeSpeed = (rt.isBoss ? 9.2 : 8.4) * lungeMult;
                   rt.vx += rt.attackDirX * lungeSpeed;
                   rt.vz += rt.attackDirZ * lungeSpeed;
                   if (rt.baddieRig?.isFlyer || rt.quadrupedRig?.canFly) {
                     rt.vy = -1.2;
                   }
-                  AudioEngine.playSound('whoosh');
+                  if (attackMeta.element === 'Water') {
+                    AudioEngine.playSound('splash');
+                  } else if (attackMeta.element === 'Electric' || attackMeta.element === 'Solar' || attackMeta.element === 'Ice') {
+                    AudioEngine.playSound('sparkle');
+                  } else if (attackMeta.element === 'Sound') {
+                    AudioEngine.playSound('hit');
+                  } else {
+                    AudioEngine.playSound('whoosh');
+                  }
                   rt.customInst?.setAction('attack', 0.06);
                 }
               } else if (rt.aiState === 'strike') {
                 rt.stateTimer -= simDt;
+                const strikeProg = THREE.MathUtils.clamp(
+                  1 - rt.stateTimer / Math.max(0.05, strikeTotal),
+                  0,
+                  1
+                );
+                if (rt.quadrupedRig) {
+                  monsterVfx.emitAttackStep(rt.quadrupedRig, curAttack, 'strike', strikeProg, simDt);
+                }
                 // Active enemy strike frames
                 if (
                   !rt.strikeDidHit &&
-                  rt.stateTimer <= 0.2 &&
-                  rt.stateTimer >= 0.04 &&
+                  strikeProg >= 0.16 &&
+                  strikeProg <= 0.86 &&
                   hitInvuln <= 0
                 ) {
                   const curDx = heroX - rt.x;
                   const curDz = heroZ - rt.z;
                   const curDist = Math.hypot(curDx, curDz);
-                  const hitReach = rt.isBoss ? 2.55 : 2.0;
+                  const hitReach = hasCustomMove
+                    ? attackReach * 1.04
+                    : rt.isBoss
+                    ? 2.55
+                    : 2.0;
                   const dot =
                     curDist > 0.01
                       ? (curDx / curDist) * rt.attackDirX + (curDz / curDist) * rt.attackDirZ
                       : 1;
                   const ryCheck = sampleLevelHeight(activeLevel, rt.x, rt.z) + (rt.elevationY ?? 0);
-                  if (curDist < hitReach && (dot > 0.12 || curDist < 1.15) && Math.abs(heroY - ryCheck) < 1.75) {
+                  const verticalLimit = attackMeta.isRangedBreath || attackMeta.isRadialAoe ? 2.25 : 1.75;
+                  const dirHitOk = attackMeta.isRadialAoe
+                    ? true
+                    : attackMeta.isRangedBreath
+                    ? dot > 0.52 || curDist < 1.35
+                    : dot > 0.12 || curDist < 1.15;
+                  if (curDist < hitReach && dirHitOk && Math.abs(heroY - ryCheck) < verticalLimit) {
                     rt.strikeDidHit = true;
-                    let incomingDmg = 1;
+                    let incomingDmg = Math.max(
+                      1,
+                      Math.round((rt.monsterAttackPower ?? 1) * (berserkActive ? 1.5 : 1))
+                    );
                     if (heroDefensePower > 0) {
                       armorBlockCounter += heroDefensePower;
                       if (armorBlockCounter >= 3) {
@@ -7565,14 +7731,16 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                     hitInvuln = 0.95;
                     shakeTimer = incomingDmg > 0 ? 0.26 : 0.1;
                     hitStopTimer = 0.036;
-                    heroKnockVX = rt.attackDirX * (incomingDmg > 0 ? 9.8 : 5.2);
-                    heroKnockVZ = rt.attackDirZ * (incomingDmg > 0 ? 9.8 : 5.2);
+                    const kbDirX = attackMeta.isRadialAoe && curDist > 0.05 ? curDx / curDist : rt.attackDirX;
+                    const kbDirZ = attackMeta.isRadialAoe && curDist > 0.05 ? curDz / curDist : rt.attackDirZ;
+                    heroKnockVX = kbDirX * (incomingDmg > 0 ? 9.8 : 5.2);
+                    heroKnockVZ = kbDirZ * (incomingDmg > 0 ? 9.8 : 5.2);
                     if (!isSwimming && heroY <= floorY + 0.22 && incomingDmg > 0) {
                       heroVelY = 3.6;
                     }
                     heroRecoilTimer = incomingDmg > 0 ? 0.28 : 0.12;
                     if (incomingDmg > 0) {
-                      spawnCombatSparks(heroX, heroY + 1.0, heroZ, '#FF6B4A', 8, 6.4);
+                      spawnCombatSparks(heroX, heroY + 1.0, heroZ, attackMeta.color || '#FF6B4A', 8, 6.4);
                     }
                     AudioEngine.playSound(incomingDmg > 0 ? 'hurt' : 'chime');
                     AudioEngine.playSound('hit');
@@ -7610,7 +7778,18 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 if (rt.stateTimer <= 0) {
                   rt.aiState = 'recover';
                   rt.stateTimer = rt.isBoss ? 0.44 : 0.54;
-                  rt.attackCooldown = rt.isBoss ? 0.95 : 1.15;
+                  const baseCd = rt.monsterAttackCooldown ?? (rt.isBoss ? 0.95 : 1.15);
+                  const cdMult =
+                    (rt.monsterAbility === 'galeWings' && rt.quadrupedRig?.canFly ? 0.78 : 1) *
+                    (berserkActive ? 0.8 : 1);
+                  rt.attackCooldown = baseCd * cdMult;
+                  if (rt.monsterPrimaryAttack) {
+                    rt.attackCycleCount += 1;
+                    rt.activeAttack =
+                      rt.attackCycleCount % 3 === 2 && rt.monsterSecondaryAttack
+                        ? rt.monsterSecondaryAttack
+                        : rt.monsterPrimaryAttack;
+                  }
                 }
               } else if (rt.aiState === 'recover') {
                 rt.stateTimer -= simDt;
@@ -7673,7 +7852,7 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 if (dist <= attackReach && rt.attackCooldown <= 0) {
                   // Begin telegraphed attack windup!
                   rt.aiState = 'windup';
-                  rt.stateTimer = rt.isBoss ? 0.58 : 0.46;
+                  rt.stateTimer = windupTotal;
                   rt.attackDirX = dx;
                   rt.attackDirZ = dz;
                   rt.strikeDidHit = false;
@@ -7790,7 +7969,6 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                 const slopePitch = qRig.canFly
                   ? 0
                   : THREE.MathUtils.clamp(-Math.atan2(hAhead - hBehind, 1.2), -0.45, 0.45);
-                const windupTotal = rt.isBoss ? 0.58 : 0.46;
                 let qState: QuadrupedAnimState = 'idle';
                 let qProg = 0;
                 if (rt.aiState === 'dying') {
@@ -7799,10 +7977,10 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                   qState = 'stagger';
                 } else if (rt.aiState === 'windup') {
                   qState = 'windup';
-                  qProg = 1 - Math.max(0, rt.stateTimer / windupTotal);
+                  qProg = 1 - Math.max(0, rt.stateTimer / Math.max(0.05, windupTotal));
                 } else if (rt.aiState === 'strike') {
                   qState = 'strike';
-                  qProg = 1 - Math.max(0, rt.stateTimer / 0.24);
+                  qProg = 1 - Math.max(0, rt.stateTimer / Math.max(0.05, strikeTotal));
                 } else if (qRig.canFly) {
                   qState = 'fly';
                 } else if (movingBaddie && rt.aiState === 'chase') {
@@ -7811,6 +7989,12 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                   qState = 'walk';
                 }
                 const spdNorm = rt.aiState === 'chase' ? 0.92 : movingBaddie ? 0.54 : 0;
+                const bMood: CreatureExpressionMood =
+                  rt.aiState === 'strike' || rt.aiState === 'stagger'
+                    ? 'open'
+                    : rt.aiState === 'windup' || rt.aiState === 'chase'
+                      ? 'angry'
+                      : qRig.blueprint.mouth.mood;
                 animateQuadrupedMonster(
                   qRig,
                   dt,
@@ -7821,9 +8005,15 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
                   qProg,
                   slopePitch,
                   rt.recoilPitch,
-                  rt.recoilRoll
+                  rt.recoilRoll,
+                  curAttack,
+                  bMood,
+                  bMood
                 );
-                if (rt.aiState === 'strike') {
+                const showSlash =
+                  rt.aiState === 'strike' &&
+                  (curAttack === 'clawSlash' || curAttack === 'chargeGore' || curAttack === 'tailSmash');
+                if (showSlash) {
                   qRig.slashArc.visible = true;
                   qRig.slashArc.rotation.y = 0.7 - qProg * 1.5;
                   qRig.slashMat.opacity = Math.sin(qProg * Math.PI) * 0.75;
@@ -9183,6 +9373,8 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
 
         syncSkyDomeToCamera(scene, camera.position);
 
+        monsterVfx.update(dt);
+
         islandHandles.grassSystem?.update(
           camera,
           sun,
@@ -9378,6 +9570,7 @@ export const PlayModeView: React.FC<{ store: MakerStore }> = ({ store }) => {
       for (const fx of activeFxRuntimes) {
         fx.dispose();
       }
+      monsterVfx.dispose();
       scentPuffGeo.dispose();
       sonarRingGeo.dispose();
       revealBeaconGeo.dispose();

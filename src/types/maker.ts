@@ -3202,10 +3202,260 @@ export interface CharacterFacialHairConfig {
 // ============================================================================
 
 export type MonsterHeadStyle = 'wolf' | 'dragon' | 'demon' | 'dino' | 'fluffy' | 'spider';
-export type MonsterHornStyle = 'none' | 'twinHorns' | 'ramCurl' | 'stagAntlers' | 'crownSpikes' | 'rhinoHorn';
-export type MonsterWingStyle = 'none' | 'dragonBat' | 'feathered' | 'fairyInsect';
-export type MonsterTailStyle = 'none' | 'bushy' | 'dragonSpiked' | 'club' | 'stinger' | 'shortStub';
+export type MonsterHornStyle =
+  | 'none'
+  | 'twinHorns'
+  | 'ramCurl'
+  | 'stagAntlers'
+  | 'crownSpikes'
+  | 'rhinoHorn'
+  | 'unicorn'
+  | 'devilSweep'
+  | 'crystalCrown';
+export type MonsterEarStyle =
+  | 'none'
+  | 'wolfPerk'
+  | 'foxTall'
+  | 'bearRound'
+  | 'floppy'
+  | 'batFin'
+  | 'frill';
+export type MonsterWingStyle =
+  | 'none'
+  | 'dragonBat'
+  | 'feathered'
+  | 'fairyInsect'
+  | 'wyvern'
+  | 'elementalEnergy';
+export type MonsterTailStyle =
+  | 'none'
+  | 'bushy'
+  | 'dragonSpiked'
+  | 'club'
+  | 'stinger'
+  | 'shortStub'
+  | 'whip'
+  | 'bladeFin'
+  | 'twinFork';
+export type MonsterPawStyle = 'paw' | 'claw' | 'hoof' | 'talon' | 'arachnid' | 'stump';
+export type MonsterSpikeStyle =
+  | 'boneSpikes'
+  | 'dorsalFins'
+  | 'crystalSpines'
+  | 'armoredPlates'
+  | 'maneTufts';
 export type MonsterRole = 'baddie' | 'npc' | 'buddy';
+export type CreatureExpressionMood = 'closed' | 'open' | 'angry' | 'happy' | 'shy';
+
+export type MonsterPartKey =
+  | 'chest'
+  | 'torso'
+  | 'hips'
+  | 'belly'
+  | 'neck'
+  | 'head'
+  | 'muzzle'
+  | 'mouth'
+  | 'teeth'
+  | 'eyes'
+  | 'eyebrows'
+  | 'ears'
+  | 'horns'
+  | 'frontLegs'
+  | 'rearLegs'
+  | 'midLegs'
+  | 'wings'
+  | 'tail'
+  | 'spikes'
+  | 'coat'
+  | 'combat';
+
+export type MonsterAttackType =
+  | 'clawSlash'
+  | 'groundPound'
+  | 'tailSmash'
+  | 'chargeGore'
+  | 'sonicRoar'
+  | 'fireBreath'
+  | 'iceBreath'
+  | 'waterJet'
+  | 'electricShock'
+  | 'poisonSpit'
+  | 'shadowBeam'
+  | 'solarBeam';
+
+export type MonsterAbilityId =
+  | 'none'
+  | 'intimidate'
+  | 'thickFat'
+  | 'flameBody'
+  | 'staticShell'
+  | 'swiftStride'
+  | 'galeWings'
+  | 'berserk'
+  | 'regenerator';
+
+export interface MonsterSegmentProfile {
+  startRadius: number;
+  midRadius: number;
+  endRadius: number;
+  curvature: number;
+  length: number;
+  squashX: number;
+  squashZ: number;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  blendScale: number;
+  color: string;
+}
+
+export interface MonsterLegPairConfig {
+  upper: MonsterSegmentProfile;
+  lower: MonsterSegmentProfile;
+  hipSpreadX: number;
+  hipOffsetY: number;
+  hipOffsetZ: number;
+  stanceAngleDeg: number;
+  kneeBendDeg: number;
+  spiderSplay: number;
+  pawStyle: MonsterPawStyle;
+  pawScale: number;
+  clawColor: string;
+}
+
+export interface MonsterMuzzleConfig {
+  enabled: boolean;
+  length: number;
+  width: number;
+  height: number;
+  taper: number;
+  splitCleft: number;
+  fangSize: number;
+  nostrils: boolean;
+  tiltDeg: number;
+  offsetY: number;
+  offsetZ: number;
+  blendScale: number;
+  color: string;
+}
+
+export interface MonsterMouthConfig {
+  mood: CreatureExpressionMood;
+  mouthOpen: number;
+  smileCurve: number;
+  width: number;
+  lipThickness: number;
+  tongueVisible: boolean;
+  tongueStickOut?: number;
+  tongueColor: string;
+  interiorColor: string;
+  lipColor: string;
+  blushColor: string;
+  offsetY: number;
+  offsetZ: number;
+}
+
+export type MonsterTeethStyle = 'none' | 'strips' | 'canine' | 'stripsAndCanine' | 'buck';
+
+export interface MonsterTeethConfig {
+  style: MonsterTeethStyle;
+  sharpness: number; // 0 = dull rounded, 1 = sharp pointed
+  size: number;
+  spreadX: number;
+  showTop: boolean;
+  showBottom: boolean;
+  topOffsetY: number;
+  bottomOffsetY: number;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  color: string;
+}
+
+export interface MonsterEyebrowsConfig {
+  enabled: boolean;
+  mood: CreatureExpressionMood;
+  width: number;
+  thickness: number;
+  arch: number;
+  tiltDeg: number;
+  spacing: number;
+  height: number;
+  color: string;
+}
+
+export interface MonsterEarsConfig {
+  style: MonsterEarStyle;
+  size: number;
+  thickness?: number;
+  softness?: number;
+  tiltDeg: number;
+  spreadDeg: number;
+  offsetY: number;
+  offsetZ: number;
+  color: string;
+  innerColor: string;
+}
+
+export interface MonsterEyesConfig {
+  count: 1 | 2 | 3 | 4 | 6 | 8;
+  pupilStyle: CharacterEyePupilStyle;
+  size: number;
+  aspectX: number;
+  aspectY: number;
+  flatness: number;
+  spacing: number;
+  height: number;
+  depthOffset: number;
+  eyelidRest: number;
+  scleraColor: string;
+  irisColor: string;
+  pupilColor: string;
+  glowEmissive: number;
+}
+
+export interface MonsterHornsConfig {
+  length: number;
+  thickness: number;
+  softness?: number;
+  sweepDeg: number;
+  spreadX: number;
+  offsetY: number;
+  offsetZ: number;
+  color: string;
+}
+
+export interface MonsterWingsConfig {
+  span: number;
+  chordWidth: number;
+  sweepBackDeg: number;
+  liftDeg: number;
+  foldDeg: number;
+  offsetX: number;
+  offsetY: number;
+  offsetZ: number;
+  ribCount: number;
+  membraneOpacity?: number;
+  wingColor: string;
+  boneColor: string;
+  tipColor: string;
+}
+
+export interface MonsterSpikesConfig {
+  enabled: boolean;
+  style: MonsterSpikeStyle;
+  count: number;
+  length: number;
+  thickness: number;
+  softness?: number;
+  sinkDepth?: number;
+  sweepDeg: number;
+  startFrac: number;
+  endFrac: number;
+  color: string;
+  tipColor: string;
+}
 
 export interface MonsterBlueprint {
   id: string;
@@ -3235,6 +3485,45 @@ export interface MonsterBlueprint {
   speed?: number;
   health?: number;
   dialogue?: string;
+
+  /** Organic SDF Clay & Comprehensive Body Part Controls */
+  materialFinish?: CharacterMaterialFinish;
+  blendSmoothness?: number;
+  chest?: MonsterSegmentProfile;
+  torso?: MonsterSegmentProfile & { archY: number };
+  hips?: MonsterSegmentProfile;
+  belly?: MonsterSegmentProfile & { enabled: boolean };
+  neck?: MonsterSegmentProfile & { segments: number; pitchDeg: number; spreadDeg: number };
+  head?: MonsterSegmentProfile & {
+    crownHeight: number;
+    browFierce: number;
+    jawWidth: number;
+    jawDrop: number;
+    craniumTiltDeg: number;
+  };
+  muzzle?: MonsterMuzzleConfig;
+  mouth?: MonsterMouthConfig;
+  teeth?: MonsterTeethConfig;
+  eyes?: MonsterEyesConfig;
+  eyebrows?: MonsterEyebrowsConfig;
+  ears?: MonsterEarsConfig;
+  horns?: MonsterHornsConfig;
+  frontLegs?: MonsterLegPairConfig;
+  rearLegs?: MonsterLegPairConfig;
+  midLegs?: MonsterLegPairConfig;
+  wings?: MonsterWingsConfig;
+  tail?: MonsterSegmentProfile & { segments: number; curlUp: number; tipScale: number; tipColor: string };
+  spikes?: MonsterSpikesConfig;
+  surfaceCoat?: CharacterSurfaceCoatConfig;
+
+  /** Pokemon-style Special Attacks & Passive Abilities */
+  primaryAttack?: MonsterAttackType;
+  secondaryAttack?: MonsterAttackType;
+  specialAbility?: MonsterAbilityId;
+  attackPower?: number;
+  attackRange?: number;
+  attackCooldown?: number;
 }
+
 
 

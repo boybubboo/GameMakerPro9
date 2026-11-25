@@ -71,6 +71,8 @@ export interface SdfPrimitive {
   roundness?: number;
   /** Optional semantic body part key for editor highlight masks */
   partKey?: CharacterBodyPartKey;
+  /** Optional explicit part mask slot index (0..14) for custom SDF builders such as Monster Maker */
+  partIndex?: number;
   /** Optional segment seam zone ID (>= 0) for surface segment boundary lines */
   seamZone?: number;
 }
@@ -320,7 +322,12 @@ function compilePrimitives(
     const aby = p.b[1] - p.a[1];
     const abz = p.b[2] - p.a[2];
 
-    const partIdx = p.partKey ? CHARACTER_PART_INDEX[p.partKey] : -1;
+    const partIdx =
+      p.partIndex !== undefined
+        ? p.partIndex
+        : p.partKey
+          ? CHARACTER_PART_INDEX[p.partKey]
+          : -1;
     const seamZone = p.seamZone !== undefined ? p.seamZone : partIdx;
     let seamSlot = -1;
     if (op === 'add' && seamZone >= 0) {

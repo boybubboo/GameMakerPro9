@@ -2656,8 +2656,8 @@ export const WorldDomainInspector: React.FC<WorldDomainInspectorProps> = ({
                 <Sparkles size={13} />
                 <span>
                   {currentEntity.monsterConfig
-                    ? 'Edit in Monster Studio'
-                    : 'Make 4-Legged Animal / Monster'}
+                    ? 'Edit in Creature Maker'
+                    : 'Make Creature (4/6/8 Legs)'}
                 </span>
               </button>
             )}

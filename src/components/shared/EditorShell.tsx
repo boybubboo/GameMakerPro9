@@ -283,8 +283,8 @@ export const EditorShell: React.FC<{ store: MakerStore }> = ({ store }) => {
                         action: () => store.openCharacterMaker(),
                       },
                       {
-                        label: 'Animal & Monster Studio',
-                        desc: '4/6/8 legs, multi-heads, horns & wings',
+                        label: 'Creature Maker',
+                        desc: 'Animals, multi-limb beasts & abilities',
                         Icon: Sparkles,
                         color: '#EC4899',
                         action: () => store.openMonsterMaker(),
